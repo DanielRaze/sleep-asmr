@@ -1,3 +1,6 @@
+import AppKit
+import AVFoundation
+import ApplicationServices
 import Combine
 import Foundation
 
@@ -7,11 +10,16 @@ final class MonitoringViewModel: ObservableObject {
     @Published var shouldSleepDisplayOnTrigger = true
     @Published var isPowerSavingEnabled = true
     @Published var allowBriefEyeOpenings = true
+    @Published var useCumulativeScoring = true
     @Published var briefOpeningToleranceSeconds: Double = 3
+    @Published var scoreTriggerThreshold: Double = 0.92
     @Published var delaySeconds: Double = 600
     @Published var statusText: String = "Готово к запуску"
     @Published var analysisModeText: String = "Экономный режим: редкая проверка"
+    @Published var sleepinessScore: Double = 0
     @Published var errorMessage: String?
+    @Published var permissionsInfoText: String?
+    @Published var showRestartPrompt = false
 
     let cameraManager = CameraManager()
 
@@ -21,9 +29,15 @@ final class MonitoringViewModel: ObservableObject {
 
     private let lowFrequencyInterval: TimeInterval = 0.8
     private let highFrequencyInterval: TimeInterval = 0.2
+    private let initialPermissionFlowKey = "sleepasmr.didRunInitialPermissionFlow"
+    private let scoreGainClosedPerSec: Double = 0.22
+    private let scoreDecayOpenPerSec: Double = 0.35
+    private let scoreDecayNotDetectedPerSec: Double = 0.45
+    private let scoreDecayBriefOpenPerSec: Double = 0.08
 
     private var closedSince: Date?
     private var briefOpeningStartedAt: Date?
+    private var lastScoreUpdateAt: Date?
     private var didTrigger = false
 
     init() {
@@ -45,6 +59,55 @@ final class MonitoringViewModel: ObservableObject {
         isMonitoring ? stopMonitoring() : startMonitoring()
     }
 
+    func runInitialPermissionFlowIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: initialPermissionFlowKey) else { return }
+        defaults.set(true, forKey: initialPermissionFlowKey)
+
+        Task {
+            let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+            var requestedAnyPermission = false
+            var cameraMessage = "Камера: уже настроено"
+
+            switch cameraStatus {
+            case .authorized:
+                cameraMessage = "Камера: доступ уже разрешен"
+            case .notDetermined:
+                requestedAnyPermission = true
+                let granted = await requestCameraAccess()
+                cameraMessage = granted ? "Камера: доступ выдан" : "Камера: доступ не выдан"
+            case .denied, .restricted:
+                cameraMessage = "Камера: доступ запрещен"
+            @unknown default:
+                cameraMessage = "Камера: неизвестный статус"
+            }
+
+            let accessibilityWasTrusted = AXIsProcessTrusted()
+            var accessibilityMessage = "Accessibility: уже настроено"
+            if !accessibilityWasTrusted {
+                requestedAnyPermission = true
+                requestAccessibilityPrompt()
+                accessibilityMessage = "Accessibility: откройте системный диалог и разрешите доступ"
+            } else {
+                accessibilityMessage = "Accessibility: доступ уже разрешен"
+            }
+
+            permissionsInfoText = "\(cameraMessage). \(accessibilityMessage)."
+            if requestedAnyPermission {
+                showRestartPrompt = true
+            }
+        }
+    }
+
+    func restartApplication() {
+        let appPath = Bundle.main.bundlePath
+        let reopen = Process()
+        reopen.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        reopen.arguments = [appPath]
+        try? reopen.run()
+        NSApp.terminate(nil)
+    }
+
     func startMonitoring() {
         statusText = "Проверка доступа к камере..."
         errorMessage = nil
@@ -56,6 +119,8 @@ final class MonitoringViewModel: ObservableObject {
                 case .success:
                     self.closedSince = nil
                     self.briefOpeningStartedAt = nil
+                    self.lastScoreUpdateAt = nil
+                    self.sleepinessScore = 0
                     self.didTrigger = false
                     self.applySamplingMode(for: .notDetected)
                     self.isMonitoring = true
@@ -75,6 +140,8 @@ final class MonitoringViewModel: ObservableObject {
         isMonitoring = false
         closedSince = nil
         briefOpeningStartedAt = nil
+        lastScoreUpdateAt = nil
+        sleepinessScore = 0
         didTrigger = false
         statusText = "Мониторинг остановлен"
     }
@@ -85,6 +152,7 @@ final class MonitoringViewModel: ObservableObject {
 
     private func handle(eyeState: VisionEyeStateDetector.EyeState, now: Date) {
         guard isMonitoring else { return }
+        updateCumulativeScore(for: eyeState, now: now)
 
         switch eyeState {
         case .open:
@@ -109,6 +177,9 @@ final class MonitoringViewModel: ObservableObject {
 
             if remaining > 0 {
                 statusText = "Таймер: \(Int(remaining.rounded(.up))) сек до выключения"
+                if useCumulativeScoring, sleepinessScore >= scoreTriggerThreshold {
+                    triggerDisplaySleepIfNeeded()
+                }
             } else {
                 triggerDisplaySleepIfNeeded()
             }
@@ -150,6 +221,9 @@ final class MonitoringViewModel: ObservableObject {
             let elapsed = now.timeIntervalSince(closedSince)
             let remaining = max(0, delaySeconds - elapsed)
             statusText = "Краткое открытие глаз: \(Int(remaining.rounded(.up))) сек до выключения"
+            if useCumulativeScoring, sleepinessScore >= scoreTriggerThreshold {
+                triggerDisplaySleepIfNeeded()
+            }
         } else {
             resetCloseTracking()
             statusText = "Глаза открыты"
@@ -160,6 +234,52 @@ final class MonitoringViewModel: ObservableObject {
         closedSince = nil
         briefOpeningStartedAt = nil
         didTrigger = false
+    }
+
+    private func updateCumulativeScore(for state: VisionEyeStateDetector.EyeState, now: Date) {
+        guard useCumulativeScoring else {
+            sleepinessScore = 0
+            lastScoreUpdateAt = now
+            return
+        }
+
+        guard let last = lastScoreUpdateAt else {
+            lastScoreUpdateAt = now
+            return
+        }
+
+        let dt = max(0, min(now.timeIntervalSince(last), 1.5))
+        lastScoreUpdateAt = now
+
+        let delta: Double
+        switch state {
+        case .closed:
+            delta = scoreGainClosedPerSec * dt
+        case .open:
+            if allowBriefEyeOpenings, briefOpeningStartedAt != nil, closedSince != nil {
+                delta = -scoreDecayBriefOpenPerSec * dt
+            } else {
+                delta = -scoreDecayOpenPerSec * dt
+            }
+        case .notDetected:
+            delta = -scoreDecayNotDetectedPerSec * dt
+        }
+
+        sleepinessScore = min(1, max(0, sleepinessScore + delta))
+    }
+
+    private func requestCameraAccess() async -> Bool {
+        await withCheckedContinuation { continuation in
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+
+    private func requestAccessibilityPrompt() {
+        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [key: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
     }
 
     private func applySamplingMode(for state: VisionEyeStateDetector.EyeState) {

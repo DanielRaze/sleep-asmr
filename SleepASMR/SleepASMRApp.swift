@@ -3,6 +3,8 @@ import SwiftUI
 
 @main
 struct SleepASMRApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     init() {
         NSApplication.shared.applicationIconImage = AppIconFactory.makeIcon()
     }
@@ -10,8 +12,31 @@ struct SleepASMRApp: App {
     var body: some Scene {
         WindowGroup {
             MainView()
-                .frame(minWidth: 720, minHeight: 520)
+                .frame(minWidth: 760, minHeight: 760)
         }
+        .defaultSize(width: 860, height: 820)
+        .windowResizability(.contentSize)
+
+        MenuBarExtra("Sleep ASMR", systemImage: "eye.fill") {
+            Button("Показать окно") {
+                NSApp.activate(ignoringOtherApps: true)
+                if let mainWindow = NSApp.windows.first {
+                    mainWindow.makeKeyAndOrderFront(nil)
+                }
+            }
+
+            Divider()
+
+            Button("Выход") {
+                NSApp.terminate(nil)
+            }
+        }
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
     }
 }
 

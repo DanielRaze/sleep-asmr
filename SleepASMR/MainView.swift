@@ -103,12 +103,34 @@ struct MainView: View {
                     .toggleStyle(.switch)
                     .foregroundStyle(.white)
 
+                Toggle("Накопительный скоринг сонливости", isOn: $viewModel.useCumulativeScoring)
+                    .toggleStyle(.switch)
+                    .foregroundStyle(.white)
+
                 if viewModel.allowBriefEyeOpenings {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Допуск короткого открытия: \(Int(viewModel.briefOpeningToleranceSeconds)) сек")
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.8))
                         Slider(value: $viewModel.briefOpeningToleranceSeconds, in: 1...10, step: 1)
+                            .tint(Color(red: 0.55, green: 0.84, blue: 0.98))
+                    }
+                }
+
+                if viewModel.useCumulativeScoring {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Скоринг: \(Int(viewModel.sleepinessScore * 100))%")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.9))
+
+                        ProgressView(value: viewModel.sleepinessScore, total: 1)
+                            .tint(Color(red: 0.55, green: 0.84, blue: 0.98))
+
+                        Text("Порог срабатывания скоринга: \(Int(viewModel.scoreTriggerThreshold * 100))%")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.8))
+
+                        Slider(value: $viewModel.scoreTriggerThreshold, in: 0.70...0.99, step: 0.01)
                             .tint(Color(red: 0.55, green: 0.84, blue: 0.98))
                     }
                 }
@@ -136,6 +158,18 @@ struct MainView: View {
         .onChange(of: viewModel.isPowerSavingEnabled) { _, _ in
             viewModel.refreshSamplingMode()
         }
+        .onAppear {
+            viewModel.runInitialPermissionFlowIfNeeded()
+        }
+        .alert("Перезапуск рекомендуется", isPresented: $viewModel.showRestartPrompt) {
+            Button("Перезапустить сейчас") {
+                viewModel.restartApplication()
+            }
+            Button("Позже", role: .cancel) {}
+        } message: {
+            Text(viewModel.permissionsInfoText ?? "Разрешения были запрошены. Перезапуск нужен, чтобы все сервисы стабильно применились.")
+        }
+        .background(WindowCloseToTrayBehavior())
     }
 
     private func formattedDelay(_ seconds: Double) -> String {
@@ -189,4 +223,39 @@ final class PreviewView: NSView {
         layer.videoGravity = .resizeAspectFill
         return layer
     }()
+}
+
+struct WindowCloseToTrayBehavior: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            if let window = view.window {
+                window.isReleasedWhenClosed = false
+                window.delegate = context.coordinator
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            if let window = nsView.window {
+                window.isReleasedWhenClosed = false
+                if window.delegate !== context.coordinator {
+                    window.delegate = context.coordinator
+                }
+            }
+        }
+    }
+
+    final class Coordinator: NSObject, NSWindowDelegate {
+        func windowShouldClose(_ sender: NSWindow) -> Bool {
+            sender.orderOut(nil)
+            return false
+        }
+    }
 }
