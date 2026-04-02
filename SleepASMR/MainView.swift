@@ -61,6 +61,34 @@ struct MainView: View {
                 .background(.white.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
+                if let missing = viewModel.missingPermissionsText {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(missing)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color(red: 1.0, green: 0.75, blue: 0.45))
+
+                        HStack(spacing: 8) {
+                            Button("Запросить снова") {
+                                viewModel.requestMissingPermissions()
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Настройки камеры") {
+                                viewModel.openCameraPrivacySettings()
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Настройки Accessibility") {
+                                viewModel.openAccessibilityPrivacySettings()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .padding(12)
+                    .background(.white.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Задержка: \(formattedDelay(viewModel.delaySeconds))")
                         .foregroundStyle(.white)
@@ -160,6 +188,10 @@ struct MainView: View {
         }
         .onAppear {
             viewModel.runInitialPermissionFlowIfNeeded()
+            viewModel.refreshPermissionsStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            viewModel.refreshPermissionsStatus()
         }
         .alert("Перезапуск рекомендуется", isPresented: $viewModel.showRestartPrompt) {
             Button("Перезапустить сейчас") {

@@ -20,6 +20,8 @@ final class MonitoringViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var permissionsInfoText: String?
     @Published var showRestartPrompt = false
+    @Published var hasAllPermissions = false
+    @Published var missingPermissionsText: String?
 
     let cameraManager = CameraManager()
 
@@ -34,6 +36,7 @@ final class MonitoringViewModel: ObservableObject {
     private let scoreDecayOpenPerSec: Double = 0.35
     private let scoreDecayNotDetectedPerSec: Double = 0.45
     private let scoreDecayBriefOpenPerSec: Double = 0.08
+    private var wasMissingPermissions = false
 
     private var closedSince: Date?
     private var briefOpeningStartedAt: Date?
@@ -57,6 +60,35 @@ final class MonitoringViewModel: ObservableObject {
 
     func toggleMonitoring() {
         isMonitoring ? stopMonitoring() : startMonitoring()
+    }
+
+    func refreshPermissionsStatus() {
+        let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        let cameraGranted = cameraStatus == .authorized
+        let accessibilityGranted = AXIsProcessTrusted()
+
+        hasAllPermissions = cameraGranted && accessibilityGranted
+
+        var missing: [String] = []
+        if !cameraGranted {
+            missing.append("Камера")
+        }
+        if !accessibilityGranted {
+            missing.append("Accessibility")
+        }
+
+        missingPermissionsText = missing.isEmpty
+            ? nil
+            : "Не хватает разрешений: \(missing.joined(separator: ", "))."
+
+        if !hasAllPermissions {
+            wasMissingPermissions = true
+        } else if wasMissingPermissions {
+            // После выдачи разрешений в работающем приложении рекомендуем перезапуск.
+            permissionsInfoText = "Разрешения выданы. Рекомендуется перезапустить приложение."
+            showRestartPrompt = true
+            wasMissingPermissions = false
+        }
     }
 
     func runInitialPermissionFlowIfNeeded() {
@@ -96,7 +128,34 @@ final class MonitoringViewModel: ObservableObject {
             if requestedAnyPermission {
                 showRestartPrompt = true
             }
+
+            refreshPermissionsStatus()
         }
+    }
+
+    func requestMissingPermissions() {
+        let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+
+        if cameraStatus == .notDetermined {
+            Task {
+                _ = await requestCameraAccess()
+                refreshPermissionsStatus()
+            }
+        }
+
+        if !AXIsProcessTrusted() {
+            requestAccessibilityPrompt()
+        }
+
+        refreshPermissionsStatus()
+    }
+
+    func openCameraPrivacySettings() {
+        openPrivacySettings(anchor: "Privacy_Camera")
+    }
+
+    func openAccessibilityPrivacySettings() {
+        openPrivacySettings(anchor: "Privacy_Accessibility")
     }
 
     func restartApplication() {
@@ -280,6 +339,13 @@ final class MonitoringViewModel: ObservableObject {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         let options = [key: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
+    }
+
+    private func openPrivacySettings(anchor: String) {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
     }
 
     private func applySamplingMode(for state: VisionEyeStateDetector.EyeState) {
