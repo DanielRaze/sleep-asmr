@@ -6,6 +6,8 @@ final class MonitoringViewModel: ObservableObject {
     @Published var isMonitoring = false
     @Published var shouldSleepDisplayOnTrigger = true
     @Published var isPowerSavingEnabled = true
+    @Published var allowBriefEyeOpenings = true
+    @Published var briefOpeningToleranceSeconds: Double = 3
     @Published var delaySeconds: Double = 600
     @Published var statusText: String = "Готово к запуску"
     @Published var analysisModeText: String = "Экономный режим: редкая проверка"
@@ -21,6 +23,7 @@ final class MonitoringViewModel: ObservableObject {
     private let highFrequencyInterval: TimeInterval = 0.2
 
     private var closedSince: Date?
+    private var briefOpeningStartedAt: Date?
     private var didTrigger = false
 
     init() {
@@ -52,6 +55,7 @@ final class MonitoringViewModel: ObservableObject {
                 switch result {
                 case .success:
                     self.closedSince = nil
+                    self.briefOpeningStartedAt = nil
                     self.didTrigger = false
                     self.applySamplingMode(for: .notDetected)
                     self.isMonitoring = true
@@ -70,6 +74,7 @@ final class MonitoringViewModel: ObservableObject {
         cameraManager.stopSession()
         isMonitoring = false
         closedSince = nil
+        briefOpeningStartedAt = nil
         didTrigger = false
         statusText = "Мониторинг остановлен"
     }
@@ -84,15 +89,15 @@ final class MonitoringViewModel: ObservableObject {
         switch eyeState {
         case .open:
             applySamplingMode(for: .open)
-            closedSince = nil
-            didTrigger = false
-            statusText = "Глаза открыты"
+            handleOpenEyes(now: now)
 
         case .closed:
             applySamplingMode(for: .closed)
             if closedSince == nil {
                 closedSince = now
             }
+
+            briefOpeningStartedAt = nil
 
             guard let closedSince else {
                 statusText = "Глаза закрыты"
@@ -110,10 +115,51 @@ final class MonitoringViewModel: ObservableObject {
 
         case .notDetected:
             applySamplingMode(for: .notDetected)
-            closedSince = nil
-            didTrigger = false
+            resetCloseTracking()
             statusText = "Лицо не обнаружено"
         }
+    }
+
+    private func handleOpenEyes(now: Date) {
+        guard let closedSince else {
+            resetCloseTracking()
+            statusText = "Глаза открыты"
+            return
+        }
+
+        guard allowBriefEyeOpenings else {
+            resetCloseTracking()
+            statusText = "Глаза открыты"
+            return
+        }
+
+        if briefOpeningStartedAt == nil {
+            briefOpeningStartedAt = now
+        }
+
+        guard let openedAt = briefOpeningStartedAt else {
+            resetCloseTracking()
+            statusText = "Глаза открыты"
+            return
+        }
+
+        let openDuration = now.timeIntervalSince(openedAt)
+        let tolerance = max(0.5, min(briefOpeningToleranceSeconds, 10))
+
+        if openDuration <= tolerance {
+            let elapsed = now.timeIntervalSince(closedSince)
+            let remaining = max(0, delaySeconds - elapsed)
+            statusText = "Краткое открытие глаз: \(Int(remaining.rounded(.up))) сек до выключения"
+        } else {
+            resetCloseTracking()
+            statusText = "Глаза открыты"
+        }
+    }
+
+    private func resetCloseTracking() {
+        closedSince = nil
+        briefOpeningStartedAt = nil
+        didTrigger = false
     }
 
     private func applySamplingMode(for state: VisionEyeStateDetector.EyeState) {

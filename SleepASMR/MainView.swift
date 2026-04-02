@@ -99,6 +99,20 @@ struct MainView: View {
                     .toggleStyle(.switch)
                     .foregroundStyle(.white)
 
+                Toggle("Игнорировать короткие открытия глаз", isOn: $viewModel.allowBriefEyeOpenings)
+                    .toggleStyle(.switch)
+                    .foregroundStyle(.white)
+
+                if viewModel.allowBriefEyeOpenings {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Допуск короткого открытия: \(Int(viewModel.briefOpeningToleranceSeconds)) сек")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.8))
+                        Slider(value: $viewModel.briefOpeningToleranceSeconds, in: 1...10, step: 1)
+                            .tint(Color(red: 0.55, green: 0.84, blue: 0.98))
+                    }
+                }
+
                 Text(viewModel.analysisModeText)
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.72))
