@@ -5,8 +5,10 @@ import Foundation
 final class MonitoringViewModel: ObservableObject {
     @Published var isMonitoring = false
     @Published var shouldSleepDisplayOnTrigger = true
+    @Published var isPowerSavingEnabled = true
     @Published var delaySeconds: Double = 600
     @Published var statusText: String = "Готово к запуску"
+    @Published var analysisModeText: String = "Экономный режим: редкая проверка"
     @Published var errorMessage: String?
 
     let cameraManager = CameraManager()
@@ -15,10 +17,15 @@ final class MonitoringViewModel: ObservableObject {
     private let sleepController = DisplaySleepController()
     private let visionQueue = DispatchQueue(label: "sleepasmr.vision.queue", qos: .userInitiated)
 
+    private let lowFrequencyInterval: TimeInterval = 0.8
+    private let highFrequencyInterval: TimeInterval = 0.2
+
     private var closedSince: Date?
     private var didTrigger = false
 
     init() {
+        applySamplingMode(for: .notDetected)
+
         cameraManager.onFrame = { [weak self] pixelBuffer in
             guard let self else { return }
             self.visionQueue.async {
@@ -46,6 +53,7 @@ final class MonitoringViewModel: ObservableObject {
                 case .success:
                     self.closedSince = nil
                     self.didTrigger = false
+                    self.applySamplingMode(for: .notDetected)
                     self.isMonitoring = true
                     self.statusText = "Мониторинг запущен. Ожидание лица..."
                     self.cameraManager.startSession()
@@ -66,16 +74,22 @@ final class MonitoringViewModel: ObservableObject {
         statusText = "Мониторинг остановлен"
     }
 
+    func refreshSamplingMode() {
+        applySamplingMode(for: .notDetected)
+    }
+
     private func handle(eyeState: VisionEyeStateDetector.EyeState, now: Date) {
         guard isMonitoring else { return }
 
         switch eyeState {
         case .open:
+            applySamplingMode(for: .open)
             closedSince = nil
             didTrigger = false
             statusText = "Глаза открыты"
 
         case .closed:
+            applySamplingMode(for: .closed)
             if closedSince == nil {
                 closedSince = now
             }
@@ -95,9 +109,27 @@ final class MonitoringViewModel: ObservableObject {
             }
 
         case .notDetected:
+            applySamplingMode(for: .notDetected)
             closedSince = nil
             didTrigger = false
             statusText = "Лицо не обнаружено"
+        }
+    }
+
+    private func applySamplingMode(for state: VisionEyeStateDetector.EyeState) {
+        guard isPowerSavingEnabled else {
+            cameraManager.updateFrameSamplingInterval(0)
+            analysisModeText = "Точный режим: анализ каждого кадра"
+            return
+        }
+
+        switch state {
+        case .closed:
+            cameraManager.updateFrameSamplingInterval(highFrequencyInterval)
+            analysisModeText = "Экономный режим: частая проверка (глаза закрыты)"
+        case .open, .notDetected:
+            cameraManager.updateFrameSamplingInterval(lowFrequencyInterval)
+            analysisModeText = "Экономный режим: редкая проверка"
         }
     }
 

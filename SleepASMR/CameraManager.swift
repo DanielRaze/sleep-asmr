@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import QuartzCore
 
 final class CameraManager: NSObject {
     enum CameraError: Error, LocalizedError {
@@ -28,6 +29,10 @@ final class CameraManager: NSObject {
     private let sessionQueue = DispatchQueue(label: "sleepasmr.camera.session")
     private let outputQueue = DispatchQueue(label: "sleepasmr.camera.output")
     private let videoOutput = AVCaptureVideoDataOutput()
+    private let samplingLock = NSLock()
+
+    private var frameSamplingInterval: TimeInterval = 0.8
+    private var lastDeliveredFrameTime: CFTimeInterval = 0
     private var isConfigured = false
 
     func requestAccessAndConfigure(completion: @escaping (Result<Void, CameraError>) -> Void) {
@@ -53,6 +58,7 @@ final class CameraManager: NSObject {
             guard let self else { return }
             guard self.isConfigured else { return }
             guard !self.session.isRunning else { return }
+            self.resetFrameSamplingState()
             self.session.startRunning()
         }
     }
@@ -63,6 +69,19 @@ final class CameraManager: NSObject {
             guard self.session.isRunning else { return }
             self.session.stopRunning()
         }
+    }
+
+    func updateFrameSamplingInterval(_ interval: TimeInterval) {
+        let clamped = max(0, min(interval, 2.0))
+        samplingLock.lock()
+        frameSamplingInterval = clamped
+        samplingLock.unlock()
+    }
+
+    private func resetFrameSamplingState() {
+        samplingLock.lock()
+        lastDeliveredFrameTime = 0
+        samplingLock.unlock()
     }
 
     private func configureIfNeeded(completion: @escaping (Result<Void, CameraError>) -> Void) {
@@ -119,6 +138,20 @@ final class CameraManager: NSObject {
 
 extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        let now = CACurrentMediaTime()
+
+        samplingLock.lock()
+        let interval = frameSamplingInterval
+        let lastTime = lastDeliveredFrameTime
+
+        if interval > 0, now - lastTime < interval {
+            samplingLock.unlock()
+            return
+        }
+
+        lastDeliveredFrameTime = now
+        samplingLock.unlock()
+
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         onFrame?(pixelBuffer)
     }

@@ -95,6 +95,14 @@ struct MainView: View {
                     .toggleStyle(.switch)
                     .foregroundStyle(.white)
 
+                Toggle("Экономить батарею (адаптивный анализ)", isOn: $viewModel.isPowerSavingEnabled)
+                    .toggleStyle(.switch)
+                    .foregroundStyle(.white)
+
+                Text(viewModel.analysisModeText)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.72))
+
                 Button(viewModel.isMonitoring ? "Стоп" : "Старт") {
                     viewModel.toggleMonitoring()
                 }
@@ -110,6 +118,9 @@ struct MainView: View {
             if clamped != newValue {
                 viewModel.delaySeconds = clamped
             }
+        }
+        .onChange(of: viewModel.isPowerSavingEnabled) { _, _ in
+            viewModel.refreshSamplingMode()
         }
     }
 
