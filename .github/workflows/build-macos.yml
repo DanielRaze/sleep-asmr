@@ -25,7 +25,7 @@ jobs:
         run: |
           xcodebuild \
             -project SleepASMR.xcodeproj \
-            -target SleepASMR \
+            -scheme SleepASMR \
             -configuration Release \
             -destination 'platform=macOS' \
             -derivedDataPath build \

@@ -5,56 +5,105 @@ struct MainView: View {
     @StateObject private var viewModel = MonitoringViewModel()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Sleep ASMR")
-                .font(.title2.bold())
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.08, green: 0.11, blue: 0.17),
+                    Color(red: 0.05, green: 0.09, blue: 0.13)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            CameraPreviewView(session: viewModel.cameraManager.session)
-                .frame(height: 260)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(.quaternary, lineWidth: 1)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .center, spacing: 12) {
+                    Circle()
+                        .fill(.white.opacity(0.08))
+                        .frame(width: 40, height: 40)
+                        .overlay {
+                            Image(systemName: "eye.circle.fill")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundStyle(Color(red: 0.55, green: 0.84, blue: 0.98))
+                        }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sleep ASMR")
+                            .font(.system(size: 27, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text("Мониторинг закрытия глаз")
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.75))
+                    }
                 }
 
-            Text(viewModel.statusText)
-                .font(.headline)
+                CameraPreviewView(session: viewModel.cameraManager.session)
+                    .frame(height: 250)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(.white.opacity(0.12), lineWidth: 1)
+                    }
+                    .shadow(color: .black.opacity(0.35), radius: 12, x: 0, y: 8)
 
-            if let errorMessage = viewModel.errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.red)
-                    .font(.subheadline)
-            }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(viewModel.statusText)
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Задержка: \(formattedDelay(viewModel.delaySeconds))")
-                Slider(value: $viewModel.delaySeconds, in: 30...1800, step: 1)
-                HStack {
-                    Text("30 сек")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("30 мин")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if let errorMessage = viewModel.errorMessage {
+                        Text(errorMessage)
+                            .foregroundStyle(Color(red: 1.0, green: 0.58, blue: 0.58))
+                            .font(.subheadline)
+                    }
                 }
+                .padding(14)
+                .background(.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                HStack(spacing: 8) {
-                    Text("Секунды:")
-                    TextField("Сек", value: $viewModel.delaySeconds, format: .number)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 120)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Задержка: \(formattedDelay(viewModel.delaySeconds))")
+                        .foregroundStyle(.white)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+
+                    Slider(value: $viewModel.delaySeconds, in: 30...1800, step: 1)
+                        .tint(Color(red: 0.55, green: 0.84, blue: 0.98))
+
+                    HStack {
+                        Text("30 сек")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.75))
+                        Spacer()
+                        Text("30 мин")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.75))
+                    }
+
+                    HStack(spacing: 8) {
+                        Text("Секунды")
+                            .foregroundStyle(.white.opacity(0.88))
+                        TextField("Сек", value: $viewModel.delaySeconds, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 120)
+                    }
                 }
-            }
+                .padding(14)
+                .background(.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-            Toggle("Выключить экран при срабатывании", isOn: $viewModel.shouldSleepDisplayOnTrigger)
+                Toggle("Выключить экран при срабатывании", isOn: $viewModel.shouldSleepDisplayOnTrigger)
+                    .toggleStyle(.switch)
+                    .foregroundStyle(.white)
 
-            Button(viewModel.isMonitoring ? "Стоп" : "Старт") {
-                viewModel.toggleMonitoring()
+                Button(viewModel.isMonitoring ? "Стоп" : "Старт") {
+                    viewModel.toggleMonitoring()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(Color(red: 0.24, green: 0.63, blue: 0.96))
             }
-            .buttonStyle(.borderedProminent)
+            .padding(22)
         }
-        .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onChange(of: viewModel.delaySeconds) { _, newValue in
             let clamped = min(max(newValue, 30), 1800)

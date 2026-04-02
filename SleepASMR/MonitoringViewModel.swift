@@ -104,7 +104,7 @@ final class MonitoringViewModel: ObservableObject {
     private func triggerDisplaySleepIfNeeded() {
         guard !didTrigger else {
             statusText = shouldSleepDisplayOnTrigger
-                ? "Команда выключения экрана отправлена"
+                ? "Экран выключен, Mac заблокирован"
                 : "Порог достигнут (выключение экрана отключено)"
             return
         }
@@ -118,10 +118,10 @@ final class MonitoringViewModel: ObservableObject {
 
         switch sleepController.sleepDisplayNow() {
         case .success:
-            statusText = "Команда выключения экрана отправлена"
+            statusText = "Экран выключен, Mac заблокирован"
         case .failure(let error):
             errorMessage = error.localizedDescription
-            statusText = "Ошибка выключения экрана"
+            statusText = "Ошибка выключения/блокировки"
         }
     }
 }
