@@ -31,11 +31,13 @@ final class MonitoringViewModel: ObservableObject {
 
     private let lowFrequencyInterval: TimeInterval = 0.8
     private let highFrequencyInterval: TimeInterval = 0.2
+    private let closedConfirmationSeconds: TimeInterval = 1.2
     private let initialPermissionFlowKey = "sleepasmr.didRunInitialPermissionFlow"
     private var currentClosedEpisodeStart: Date?
     private var wasMissingPermissions = false
 
     private var closedSince: Date?
+    private var closedCandidateSince: Date?
     private var briefOpeningStartedAt: Date?
     private var lastScoreUpdateAt: Date?
     private var didTrigger = false
@@ -174,6 +176,7 @@ final class MonitoringViewModel: ObservableObject {
                 switch result {
                 case .success:
                     self.closedSince = nil
+                    self.closedCandidateSince = nil
                     self.currentClosedEpisodeStart = nil
                     self.briefOpeningStartedAt = nil
                     self.lastScoreUpdateAt = nil
@@ -196,6 +199,7 @@ final class MonitoringViewModel: ObservableObject {
         cameraManager.stopSession()
         isMonitoring = false
         closedSince = nil
+        closedCandidateSince = nil
         currentClosedEpisodeStart = nil
         briefOpeningStartedAt = nil
         lastScoreUpdateAt = nil
@@ -219,13 +223,26 @@ final class MonitoringViewModel: ObservableObject {
 
         case .closed:
             applySamplingMode(for: .closed)
+
             if closedSince == nil {
-                closedSince = now
-            }
-            if currentClosedEpisodeStart == nil {
-                currentClosedEpisodeStart = now
+                if closedCandidateSince == nil {
+                    closedCandidateSince = now
+                    statusText = "Проверка закрытия глаз..."
+                    return
+                }
+
+                guard let candidate = closedCandidateSince else { return }
+                let confirmElapsed = now.timeIntervalSince(candidate)
+                if confirmElapsed < closedConfirmationSeconds {
+                    statusText = "Проверка закрытия глаз..."
+                    return
+                }
+
+                closedSince = candidate
+                currentClosedEpisodeStart = candidate
             }
 
+            closedCandidateSince = nil
             briefOpeningStartedAt = nil
 
             guard let closedSince else {
@@ -293,6 +310,7 @@ final class MonitoringViewModel: ObservableObject {
 
     private func resetCloseTracking() {
         closedSince = nil
+        closedCandidateSince = nil
         currentClosedEpisodeStart = nil
         briefOpeningStartedAt = nil
         didTrigger = false
