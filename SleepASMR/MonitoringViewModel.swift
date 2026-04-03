@@ -12,7 +12,7 @@ final class MonitoringViewModel: ObservableObject {
     @Published var allowBriefEyeOpenings = true
     @Published var useCumulativeScoring = true
     @Published var briefOpeningToleranceSeconds: Double = 3
-    @Published var scoreTriggerThreshold: Double = 0.92
+    @Published var scoreTriggerThreshold: Double = 0.985
     @Published var delaySeconds: Double = 600
     @Published var statusText: String = "Готово к запуску"
     @Published var analysisModeText: String = "Экономный режим: редкая проверка"
@@ -32,10 +32,7 @@ final class MonitoringViewModel: ObservableObject {
     private let lowFrequencyInterval: TimeInterval = 0.8
     private let highFrequencyInterval: TimeInterval = 0.2
     private let initialPermissionFlowKey = "sleepasmr.didRunInitialPermissionFlow"
-    private let scoreGainClosedPerSec: Double = 0.22
-    private let scoreDecayOpenPerSec: Double = 0.35
-    private let scoreDecayNotDetectedPerSec: Double = 0.45
-    private let scoreDecayBriefOpenPerSec: Double = 0.08
+    private var currentClosedEpisodeStart: Date?
     private var wasMissingPermissions = false
 
     private var closedSince: Date?
@@ -177,6 +174,7 @@ final class MonitoringViewModel: ObservableObject {
                 switch result {
                 case .success:
                     self.closedSince = nil
+                    self.currentClosedEpisodeStart = nil
                     self.briefOpeningStartedAt = nil
                     self.lastScoreUpdateAt = nil
                     self.sleepinessScore = 0
@@ -198,6 +196,7 @@ final class MonitoringViewModel: ObservableObject {
         cameraManager.stopSession()
         isMonitoring = false
         closedSince = nil
+        currentClosedEpisodeStart = nil
         briefOpeningStartedAt = nil
         lastScoreUpdateAt = nil
         sleepinessScore = 0
@@ -223,6 +222,9 @@ final class MonitoringViewModel: ObservableObject {
             if closedSince == nil {
                 closedSince = now
             }
+            if currentClosedEpisodeStart == nil {
+                currentClosedEpisodeStart = now
+            }
 
             briefOpeningStartedAt = nil
 
@@ -236,7 +238,7 @@ final class MonitoringViewModel: ObservableObject {
 
             if remaining > 0 {
                 statusText = "Таймер: \(Int(remaining.rounded(.up))) сек до выключения"
-                if useCumulativeScoring, sleepinessScore >= scoreTriggerThreshold {
+                if canTriggerByScore(now: now) {
                     triggerDisplaySleepIfNeeded()
                 }
             } else {
@@ -280,7 +282,7 @@ final class MonitoringViewModel: ObservableObject {
             let elapsed = now.timeIntervalSince(closedSince)
             let remaining = max(0, delaySeconds - elapsed)
             statusText = "Краткое открытие глаз: \(Int(remaining.rounded(.up))) сек до выключения"
-            if useCumulativeScoring, sleepinessScore >= scoreTriggerThreshold {
+            if canTriggerByScore(now: now) {
                 triggerDisplaySleepIfNeeded()
             }
         } else {
@@ -291,8 +293,21 @@ final class MonitoringViewModel: ObservableObject {
 
     private func resetCloseTracking() {
         closedSince = nil
+        currentClosedEpisodeStart = nil
         briefOpeningStartedAt = nil
         didTrigger = false
+    }
+
+    private func canTriggerByScore(now: Date) -> Bool {
+        guard useCumulativeScoring else { return false }
+        guard sleepinessScore >= scoreTriggerThreshold else { return false }
+
+        // Защита от ложного досрочного срабатывания:
+        // даже при высоком скоре требуем минимальное время непрерывной фазы сна.
+        guard let episodeStart = currentClosedEpisodeStart else { return false }
+        let episodeDuration = now.timeIntervalSince(episodeStart)
+        let minimumRequired = min(max(15, delaySeconds * 0.55), 300)
+        return episodeDuration >= minimumRequired
     }
 
     private func updateCumulativeScore(for state: VisionEyeStateDetector.EyeState, now: Date) {
@@ -310,18 +325,26 @@ final class MonitoringViewModel: ObservableObject {
         let dt = max(0, min(now.timeIntervalSince(last), 1.5))
         lastScoreUpdateAt = now
 
+        // Нормируем динамику под выбранную задержку.
+        // При непрерывно закрытых глазах скор ~= 100% примерно за delaySeconds.
+        let base = max(delaySeconds, 30)
+        let gainClosedPerSec = 1.0 / base
+        let decayOpenPerSec = 2.4 / base
+        let decayNotDetectedPerSec = 3.0 / base
+        let decayBriefOpenPerSec = 0.6 / base
+
         let delta: Double
         switch state {
         case .closed:
-            delta = scoreGainClosedPerSec * dt
+            delta = gainClosedPerSec * dt
         case .open:
             if allowBriefEyeOpenings, briefOpeningStartedAt != nil, closedSince != nil {
-                delta = -scoreDecayBriefOpenPerSec * dt
+                delta = -decayBriefOpenPerSec * dt
             } else {
-                delta = -scoreDecayOpenPerSec * dt
+                delta = -decayOpenPerSec * dt
             }
         case .notDetected:
-            delta = -scoreDecayNotDetectedPerSec * dt
+            delta = -decayNotDetectedPerSec * dt
         }
 
         sleepinessScore = min(1, max(0, sleepinessScore + delta))

@@ -1,182 +1,38 @@
 import AVFoundation
+import AppKit
 import SwiftUI
 
 struct MainView: View {
     @StateObject private var viewModel = MonitoringViewModel()
 
+    private var scoreProgress: Double {
+        guard viewModel.useCumulativeScoring else { return 0 }
+        let threshold = max(viewModel.scoreTriggerThreshold, 0.01)
+        return min(max(viewModel.sleepinessScore / threshold, 0), 1)
+    }
+
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.08, green: 0.11, blue: 0.17),
-                    Color(red: 0.05, green: 0.09, blue: 0.13)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+        HStack(spacing: 0) {
+            CameraPreviewSection(viewModel: viewModel, scoreProgress: scoreProgress)
+                .frame(minWidth: 520, maxWidth: .infinity, minHeight: 540, maxHeight: .infinity)
+                .background(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.12, green: 0.11, blue: 0.29),
+                            Color(red: 0.02, green: 0.06, blue: 0.16)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
 
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .center, spacing: 12) {
-                    Circle()
-                        .fill(.white.opacity(0.08))
-                        .frame(width: 40, height: 40)
-                        .overlay {
-                            Image(systemName: "eye.circle.fill")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundStyle(Color(red: 0.55, green: 0.84, blue: 0.98))
-                        }
+            Divider()
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Sleep ASMR")
-                            .font(.system(size: 27, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                        Text("Мониторинг закрытия глаз")
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.75))
-                    }
-                }
-
-                CameraPreviewView(session: viewModel.cameraManager.session)
-                    .frame(height: 250)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(.white.opacity(0.12), lineWidth: 1)
-                    }
-                    .shadow(color: .black.opacity(0.35), radius: 12, x: 0, y: 8)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(viewModel.statusText)
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
-
-                    if let errorMessage = viewModel.errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(Color(red: 1.0, green: 0.58, blue: 0.58))
-                            .font(.subheadline)
-                    }
-                }
-                .padding(14)
-                .background(.white.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                if let missing = viewModel.missingPermissionsText {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(missing)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color(red: 1.0, green: 0.75, blue: 0.45))
-
-                        HStack(spacing: 8) {
-                            Button("Запросить снова") {
-                                viewModel.requestMissingPermissions()
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button("Настройки камеры") {
-                                viewModel.openCameraPrivacySettings()
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button("Настройки Accessibility") {
-                                viewModel.openAccessibilityPrivacySettings()
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
-                    .padding(12)
-                    .background(.white.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Задержка: \(formattedDelay(viewModel.delaySeconds))")
-                        .foregroundStyle(.white)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-
-                    Slider(value: $viewModel.delaySeconds, in: 30...1800, step: 1)
-                        .tint(Color(red: 0.55, green: 0.84, blue: 0.98))
-
-                    HStack {
-                        Text("30 сек")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.75))
-                        Spacer()
-                        Text("30 мин")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.75))
-                    }
-
-                    HStack(spacing: 8) {
-                        Text("Секунды")
-                            .foregroundStyle(.white.opacity(0.88))
-                        TextField("Сек", value: $viewModel.delaySeconds, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 120)
-                    }
-                }
-                .padding(14)
-                .background(.white.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                Toggle("Выключить экран при срабатывании", isOn: $viewModel.shouldSleepDisplayOnTrigger)
-                    .toggleStyle(.switch)
-                    .foregroundStyle(.white)
-
-                Toggle("Экономить батарею (адаптивный анализ)", isOn: $viewModel.isPowerSavingEnabled)
-                    .toggleStyle(.switch)
-                    .foregroundStyle(.white)
-
-                Toggle("Игнорировать короткие открытия глаз", isOn: $viewModel.allowBriefEyeOpenings)
-                    .toggleStyle(.switch)
-                    .foregroundStyle(.white)
-
-                Toggle("Накопительный скоринг сонливости", isOn: $viewModel.useCumulativeScoring)
-                    .toggleStyle(.switch)
-                    .foregroundStyle(.white)
-
-                if viewModel.allowBriefEyeOpenings {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Допуск короткого открытия: \(Int(viewModel.briefOpeningToleranceSeconds)) сек")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.8))
-                        Slider(value: $viewModel.briefOpeningToleranceSeconds, in: 1...10, step: 1)
-                            .tint(Color(red: 0.55, green: 0.84, blue: 0.98))
-                    }
-                }
-
-                if viewModel.useCumulativeScoring {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Скоринг: \(Int(viewModel.sleepinessScore * 100))%")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.9))
-
-                        ProgressView(value: viewModel.sleepinessScore, total: 1)
-                            .tint(Color(red: 0.55, green: 0.84, blue: 0.98))
-
-                        Text("Порог срабатывания скоринга: \(Int(viewModel.scoreTriggerThreshold * 100))%")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.8))
-
-                        Slider(value: $viewModel.scoreTriggerThreshold, in: 0.70...0.99, step: 0.01)
-                            .tint(Color(red: 0.55, green: 0.84, blue: 0.98))
-                    }
-                }
-
-                Text(viewModel.analysisModeText)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.72))
-
-                Button(viewModel.isMonitoring ? "Стоп" : "Старт") {
-                    viewModel.toggleMonitoring()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tint(Color(red: 0.24, green: 0.63, blue: 0.96))
-            }
-            .padding(22)
+            ControlPanelSection(viewModel: viewModel)
+                .frame(width: 340)
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.72))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(minWidth: 920, minHeight: 620)
         .onChange(of: viewModel.delaySeconds) { _, newValue in
             let clamped = min(max(newValue, 30), 1800)
             if clamped != newValue {
@@ -203,6 +59,225 @@ struct MainView: View {
         }
         .background(WindowCloseToTrayBehavior())
     }
+}
+
+struct CameraPreviewSection: View {
+    @ObservedObject var viewModel: MonitoringViewModel
+    let scoreProgress: Double
+
+    var body: some View {
+        ZStack {
+            CameraPreviewView(session: viewModel.cameraManager.session)
+                .ignoresSafeArea()
+
+            VStack {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(viewModel.analysisModeText)
+                            .font(.headline)
+                            .foregroundStyle(.white)
+
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(viewModel.isMonitoring ? Color.green : Color.gray)
+                                .frame(width: 8, height: 8)
+                            Text(viewModel.statusText)
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.92))
+                        }
+                    }
+
+                    Spacer()
+
+                    ZStack {
+                        Circle()
+                            .stroke(Color.white.opacity(0.2), lineWidth: 6)
+
+                        Circle()
+                            .trim(from: 0.0, to: scoreProgress)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.02, green: 0.71, blue: 0.83),
+                                        Color(red: 0.55, green: 0.36, blue: 0.96)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                            )
+                            .rotationEffect(.degrees(-90))
+                            .animation(.spring(duration: 0.25), value: scoreProgress)
+
+                        Image(systemName: "eye.slash.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 44, height: 44)
+                    .help("Скоринг: \(Int(viewModel.sleepinessScore * 100))% из \(Int(viewModel.scoreTriggerThreshold * 100))%")
+                }
+                .padding()
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .padding()
+
+                Spacer()
+
+                if let error = viewModel.errorMessage {
+                    NotificationBanner(text: error, icon: "exclamationmark.triangle.fill", color: .red)
+                } else if let missingPerm = viewModel.missingPermissionsText {
+                    NotificationBanner(text: missingPerm, icon: "lock.fill", color: .orange)
+                }
+            }
+        }
+    }
+}
+
+struct ControlPanelSection: View {
+    @ObservedObject var viewModel: MonitoringViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text("Управление")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+
+            Divider()
+
+            ScrollView {
+                VStack(spacing: 24) {
+                    VStack(spacing: 12) {
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                viewModel.toggleMonitoring()
+                            }
+                        }) {
+                            Text(viewModel.isMonitoring ? "Остановить" : "Начать мониторинг")
+                                .font(.system(size: 14, weight: .semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(viewModel.isMonitoring ? .red : .accentColor)
+                        .controlSize(.large)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Таймер до выключения")
+                                Spacer()
+                                Text(formattedDelay(viewModel.delaySeconds))
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                            .font(.system(size: 13))
+
+                            Slider(value: $viewModel.delaySeconds, in: 30...1800, step: 1)
+                                .disabled(viewModel.isMonitoring)
+                        }
+                    }
+                    .padding()
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Поведение системы")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        Toggle("Выключать дисплей при сне", isOn: $viewModel.shouldSleepDisplayOnTrigger)
+                            .toggleStyle(.switch)
+
+                        Toggle("Режим энергосбережения", isOn: $viewModel.isPowerSavingEnabled)
+                            .toggleStyle(.switch)
+
+                        Toggle("Накопительный скоринг", isOn: $viewModel.useCumulativeScoring)
+                            .toggleStyle(.switch)
+                            .help("Если включено, закрытие глаз учитывается накопительно")
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Тонкая настройка алгоритма")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        Toggle("Игнорировать краткие открытия", isOn: $viewModel.allowBriefEyeOpenings)
+                            .toggleStyle(.switch)
+
+                        if viewModel.allowBriefEyeOpenings {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Допуск")
+                                    Spacer()
+                                    Text("\(Int(viewModel.briefOpeningToleranceSeconds)) сек")
+                                        .foregroundStyle(.secondary)
+                                        .monospacedDigit()
+                                }
+                                .font(.system(size: 12))
+
+                                Slider(value: $viewModel.briefOpeningToleranceSeconds, in: 1...10, step: 1)
+                            }
+                            .padding(.leading, 8)
+                            .padding(.top, 4)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+
+                        if viewModel.useCumulativeScoring {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Порог скоринга")
+                                    Spacer()
+                                    Text("\(Int(viewModel.scoreTriggerThreshold * 100))%")
+                                        .foregroundStyle(.secondary)
+                                        .monospacedDigit()
+                                }
+                                .font(.system(size: 12))
+
+                                Slider(value: $viewModel.scoreTriggerThreshold, in: 0.90...0.995, step: 0.005)
+                            }
+                        }
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                    if let missing = viewModel.missingPermissionsText {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(missing)
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.orange)
+
+                            HStack(spacing: 8) {
+                                Button("Запросить снова") {
+                                    viewModel.requestMissingPermissions()
+                                }
+                                .buttonStyle(.bordered)
+
+                                Button("Камера") {
+                                    viewModel.openCameraPrivacySettings()
+                                }
+                                .buttonStyle(.bordered)
+
+                                Button("Accessibility") {
+                                    viewModel.openAccessibilityPrivacySettings()
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(NSColor.controlBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                }
+                .padding()
+            }
+        }
+    }
 
     private func formattedDelay(_ seconds: Double) -> String {
         let total = Int(seconds)
@@ -216,6 +291,27 @@ struct MainView: View {
             return "\(minutes) мин"
         }
         return "\(minutes) мин \(sec) сек"
+    }
+}
+
+struct NotificationBanner: View {
+    let text: String
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        HStack {
+            Image(systemName: icon)
+                .foregroundStyle(color)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+            Spacer()
+        }
+        .padding()
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal)
+        .padding(.bottom, 20)
     }
 }
 

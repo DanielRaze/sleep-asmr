@@ -47,45 +47,80 @@ enum AppIconFactory {
 
         let rect = NSRect(x: 0, y: 0, width: size, height: size)
         let bg = NSGradient(colors: [
-            NSColor(calibratedRed: 0.10, green: 0.14, blue: 0.20, alpha: 1),
-            NSColor(calibratedRed: 0.03, green: 0.06, blue: 0.10, alpha: 1)
+            NSColor(calibratedRed: 0.12, green: 0.11, blue: 0.29, alpha: 1),
+            NSColor(calibratedRed: 0.01, green: 0.04, blue: 0.10, alpha: 1)
         ])
 
         let rounded = NSBezierPath(roundedRect: rect, xRadius: size * 0.22, yRadius: size * 0.22)
-        bg?.draw(in: rounded, angle: -38)
+        bg?.draw(in: rounded, angle: -45)
 
-        let eyeOuterRect = NSRect(x: size * 0.14, y: size * 0.26, width: size * 0.72, height: size * 0.48)
-        let outer = NSBezierPath()
-        outer.move(to: NSPoint(x: eyeOuterRect.minX, y: eyeOuterRect.midY))
-        outer.curve(
-            to: NSPoint(x: eyeOuterRect.maxX, y: eyeOuterRect.midY),
-            controlPoint1: NSPoint(x: eyeOuterRect.minX + size * 0.18, y: eyeOuterRect.maxY),
-            controlPoint2: NSPoint(x: eyeOuterRect.maxX - size * 0.18, y: eyeOuterRect.maxY)
+        NSColor.white.withAlphaComponent(0.10).setStroke()
+        rounded.lineWidth = max(2, size * 0.006)
+        rounded.stroke()
+
+        let accent = NSGradient(colors: [
+            NSColor(calibratedRed: 0.02, green: 0.71, blue: 0.83, alpha: 1),
+            NSColor(calibratedRed: 0.55, green: 0.36, blue: 0.96, alpha: 1)
+        ])
+
+        // Closed-eye arc.
+        let eye = NSBezierPath()
+        eye.move(to: NSPoint(x: size * 0.30, y: size * 0.45))
+        eye.curve(
+            to: NSPoint(x: size * 0.70, y: size * 0.45),
+            controlPoint1: NSPoint(x: size * 0.40, y: size * 0.35),
+            controlPoint2: NSPoint(x: size * 0.60, y: size * 0.35)
         )
-        outer.curve(
-            to: NSPoint(x: eyeOuterRect.minX, y: eyeOuterRect.midY),
-            controlPoint1: NSPoint(x: eyeOuterRect.maxX - size * 0.18, y: eyeOuterRect.minY),
-            controlPoint2: NSPoint(x: eyeOuterRect.minX + size * 0.18, y: eyeOuterRect.minY)
+        eye.lineWidth = max(16, size * 0.052)
+        eye.lineCapStyle = .round
+        accent?.draw(in: eye, angle: 0)
+
+        // Eyelashes.
+        let lash1 = NSBezierPath()
+        lash1.move(to: NSPoint(x: size * 0.38, y: size * 0.42))
+        lash1.line(to: NSPoint(x: size * 0.35, y: size * 0.34))
+        lash1.lineWidth = max(9, size * 0.026)
+        lash1.lineCapStyle = .round
+        accent?.draw(in: lash1, angle: 0)
+
+        let lash2 = NSBezierPath()
+        lash2.move(to: NSPoint(x: size * 0.50, y: size * 0.40))
+        lash2.line(to: NSPoint(x: size * 0.50, y: size * 0.31))
+        lash2.lineWidth = max(9, size * 0.026)
+        lash2.lineCapStyle = .round
+        accent?.draw(in: lash2, angle: 0)
+
+        let lash3 = NSBezierPath()
+        lash3.move(to: NSPoint(x: size * 0.62, y: size * 0.42))
+        lash3.line(to: NSPoint(x: size * 0.65, y: size * 0.34))
+        lash3.lineWidth = max(9, size * 0.026)
+        lash3.lineCapStyle = .round
+        accent?.draw(in: lash3, angle: 0)
+
+        // Decorative wave lines in the top-right area.
+        let wave1 = NSBezierPath()
+        wave1.move(to: NSPoint(x: size * 0.66, y: size * 0.67))
+        wave1.curve(
+            to: NSPoint(x: size * 0.80, y: size * 0.67),
+            controlPoint1: NSPoint(x: size * 0.70, y: size * 0.70),
+            controlPoint2: NSPoint(x: size * 0.75, y: size * 0.64)
         )
-        outer.close()
+        wave1.lineWidth = max(5, size * 0.014)
+        wave1.lineCapStyle = .round
+        NSColor(calibratedRed: 0.02, green: 0.64, blue: 0.81, alpha: 0.85).setStroke()
+        wave1.stroke()
 
-        NSColor.white.withAlphaComponent(0.90).setFill()
-        outer.fill()
-
-        let irisRect = NSRect(x: size * 0.35, y: size * 0.34, width: size * 0.30, height: size * 0.30)
-        let iris = NSBezierPath(ovalIn: irisRect)
-        NSColor(calibratedRed: 0.16, green: 0.64, blue: 0.92, alpha: 1).setFill()
-        iris.fill()
-
-        let pupilRect = NSRect(x: size * 0.43, y: size * 0.42, width: size * 0.14, height: size * 0.14)
-        let pupil = NSBezierPath(ovalIn: pupilRect)
-        NSColor(calibratedRed: 0.02, green: 0.07, blue: 0.12, alpha: 1).setFill()
-        pupil.fill()
-
-        let sparkRect = NSRect(x: size * 0.50, y: size * 0.50, width: size * 0.06, height: size * 0.06)
-        let spark = NSBezierPath(ovalIn: sparkRect)
-        NSColor.white.withAlphaComponent(0.92).setFill()
-        spark.fill()
+        let wave2 = NSBezierPath()
+        wave2.move(to: NSPoint(x: size * 0.61, y: size * 0.60))
+        wave2.curve(
+            to: NSPoint(x: size * 0.83, y: size * 0.60),
+            controlPoint1: NSPoint(x: size * 0.68, y: size * 0.66),
+            controlPoint2: NSPoint(x: size * 0.76, y: size * 0.54)
+        )
+        wave2.lineWidth = max(8, size * 0.02)
+        wave2.lineCapStyle = .round
+        NSColor(calibratedRed: 0.55, green: 0.36, blue: 0.96, alpha: 0.9).setStroke()
+        wave2.stroke()
 
         image.unlockFocus()
         return image
